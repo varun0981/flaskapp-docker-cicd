@@ -1,106 +1,111 @@
-# Flask App — AWS ECS Deployment
+# Flask App — Docker & Jenkins CI/CD on AWS EC2
 
-A minimal Flask web application built for learning containerization and deployment to **AWS ECS (Elastic Container Service)**.
+A hands-on DevOps project that automates deployment of a Flask web application from GitHub to an AWS EC2 instance using Jenkins, SSH, and Docker.
 
-Part of the [TrainWithShubham](https://github.com/TrainWithShubham) — DevOps Zero To Hero course.
+## Architecture
 
-![Python](https://img.shields.io/badge/Python-3.14-blue)
-![Flask](https://img.shields.io/badge/Flask-3.1.1-green)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED)
-![AWS ECS](https://img.shields.io/badge/AWS-ECS-FF9900)
+![CI/CD architecture](docs/architecture.png)
 
-## Features
+**Deployment flow**
+1. Developer pushes application code to GitHub.
+2. GitHub webhook triggers the Jenkins pipeline running in an Ubuntu VM (UTM).
+3. Jenkins checks out the repository and connects to EC2 over SSH.
+4. EC2 pulls the latest source code and builds the Docker image on its native architecture.
+5. Jenkins replaces the previous container with the updated Flask application.
+6. The application is exposed on EC2 port `80`.
 
-- Responsive landing page with modern glassmorphism UI
-- `/health` endpoint for ECS load balancer health checks
-- Two Dockerfiles — simple and multistage (distroless)
+## Technology Stack
 
-## Tech Stack
+- **Application:** Python / Flask
+- **Version control:** Git, GitHub
+- **CI/CD:** Jenkins Pipeline, GitHub Webhook
+- **Containerization:** Docker
+- **Cloud:** AWS EC2 (Ubuntu)
+- **Deployment connection:** SSH with Jenkins credentials
+- **Local lab:** Ubuntu VM on UTM; Docker Desktop on macOS for separate container experiments
 
-| Component | Technology |
-|-----------|------------|
-| Framework | Flask 3.1.1 |
-| Runtime   | Python 3.14 |
-| Container | Docker (python-slim / distroless) |
-| Deploy    | AWS ECS |
+## Repository
 
-## Project Structure
+- GitHub: [varun0981/flaskapp-docker-cicd](https://github.com/varun0981/flaskapp-docker-cicd)
 
-```
-flask-app-ecs/
-├── app.py                 # Flask app with routes
-├── run.py                 # Entry point (host 0.0.0.0, port 80)
-├── requirements.txt       # Python dependencies
-├── templates/
-│   └── index.html         # Landing page
-├── Dockerfile             # Simple single-stage build
-└── Dockerfile-multi       # Multistage build with distroless
-```
+## Pipeline stages
 
-## Quick Start
+| Stage | Purpose |
+|---|---|
+| Checkout | Clone the `main` branch from GitHub |
+| Connect to EC2 | Verify SSH access using Jenkins-managed private key |
+| Build and Deploy on EC2 | Pull latest code, build Docker image, replace the running container, and test HTTP response |
 
-### Run locally
+## Jenkins pipeline
+
+The pipeline is configured in the Jenkins job and uses credentials rather than hard-coded private keys.
+
+- Jenkins credential ID: `ec2-ssh` (SSH Username with private key; username `ubuntu`)
+- EC2 target: configured public IP / DNS
+- EC2 application container: `flask-ec2-app`
+- Container port mapping: `80:80`
+
+> **Security:** Never commit `.pem` files, SSH private keys, passwords, or Docker credentials to GitHub. Store secrets in Jenkins Credentials and restrict EC2 security-group access.
+
+## Screenshots
+
+### Docker Desktop — Containers
+
+![Docker Desktop containers](docs/images/docker-desktop-containers.png)
+
+### Docker Desktop — Images
+
+![Docker Desktop images](docs/images/docker-desktop-images.png)
+
+### Jenkins — Successful webhook-triggered build
+
+![Jenkins successful build](docs/images/jenkins-successful-webhook-build.png)
+
+### AWS EC2 — Instance status
+
+![AWS EC2 instances](docs/images/aws-ec2-instances.png)
+
+## Verify deployment
+
+On EC2, inspect the running container:
 
 ```bash
-pip install -r requirements.txt
-python run.py
+sudo docker ps
+sudo docker logs --tail 100 flask-ec2-app
 ```
 
-App runs at **http://localhost:80**.
-
-### Run with Docker
-
-**Simple build:**
+Test the application locally on EC2:
 
 ```bash
-docker build -t flask-app .
-docker run -p 80:80 flask-app
+curl -I http://localhost/
 ```
 
-**Multistage build (smaller, production-grade):**
+Test from your browser:
 
-```bash
-docker build -f Dockerfile-multi -t flask-app .
-docker run -p 80:80 flask-app
+```text
+http://<EC2-PUBLIC-IP>/
 ```
 
-## Dockerfiles Explained
+Ensure the EC2 security group allows inbound HTTP traffic on TCP port `80`.
 
-### Simple (`Dockerfile`)
+## What this project demonstrates
 
-Single-stage build using `python:3.14-slim`. Straightforward — copies everything, installs dependencies, runs the app. Good for development and learning.
+- GitHub webhook-triggered CI/CD
+- Jenkins declarative pipelines
+- SSH-based remote deployment
+- Docker image build and container lifecycle management
+- Deploying a Flask application on AWS EC2
+- Basic deployment verification and troubleshooting
 
-### Multistage (`Dockerfile-multi`)
+## Future improvements
 
-Two-stage build:
-1. **Builder stage** — installs dependencies into a separate directory using `python:3.14-slim`
-2. **Final stage** — copies only the app and deps into a `distroless` image
+- Push versioned images to Docker Hub or Amazon ECR
+- Add automated unit tests before deployment
+- Add rollback to the previous image
+- Use an Application Load Balancer and Auto Scaling
+- Implement blue-green deployment
+- Provision EC2 and networking with Terraform
+- Add monitoring, logs, and alerts
 
-Benefits:
-- Smaller final image (no pip, no shell, no OS utilities)
-- Reduced attack surface — distroless images contain only the app and its runtime
-- Better layer caching — dependencies are copied before source code
-
-## Endpoints
-
-| Route     | Method | Description                     |
-|-----------|--------|---------------------------------|
-| `/`       | GET    | Landing page                    |
-| `/health` | GET    | Health check (returns `Server is up and running`) |
-
-## Deploy to AWS ECS
-
-High-level steps to deploy this app on ECS:
-
-1. **Push image to ECR**
-   ```bash
-   aws ecr get-login-password --region <region> | docker login --username AWS --password-stdin <account-id>.dkr.ecr.<region>.amazonaws.com
-   docker tag flask-app:latest <account-id>.dkr.ecr.<region>.amazonaws.com/flask-app:latest
-   docker push <account-id>.dkr.ecr.<region>.amazonaws.com/flask-app:latest
-   ```
-
-2. **Create ECS Task Definition** — specify the ECR image, port 80, memory/CPU limits
-
-3. **Create ECS Service** — attach to a cluster, configure desired count, link to a load balancer
-
-4. **Configure ALB** — target group pointing to port 80, use `/health` as the health check path
+---
+*Learning project — built for hands-on AWS and DevOps practice.*
